@@ -66,8 +66,9 @@ def _snap_end(words, t, sentence=True):
             break
     if idx is None:
         return t
-    if sentence:
-        # If only a sliver (<1s) of a new sentence slipped in, cut back to the break
+    if sentence and not _is_break_after(words, idx):
+        # The AI's end falls mid-sentence. If only a sliver (<1s) of that new
+        # sentence slipped in, cut back to the previous break instead of extending.
         b = idx - 1
         while b >= 0 and not _is_break_after(words, b) and words[idx]["end"] - words[b]["start"] < 1.0:
             b -= 1
