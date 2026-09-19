@@ -51,11 +51,12 @@ Each run's clips, thumbnails and metadata are copied to `outputs\runs\<date>_<vi
 
 | Default | Why |
 |---|---|
-| `--track-mode smooth` | New lag-free camera, see below |
+| `--track-mode speaker` | New camera that follows whoever is talking and zooms out when a head doesn't fit, see below |
+| `--loudness-target -14` | Normalizes every clip to about -14 LUFS, the level Shorts, TikTok and Reels play at |
+| no music (`--no-bgm`) | Added unless you pass `--bgm-mood MOOD`, `--bgm-mode` or `--bgm-volume`. An AI-picked track often fights the scene (lo-fi under deadpan comedy) |
 | `--font-style DEFAULT` | The `HORMOZI` preset's Montserrat download reports its family as "Montserrat Thin", so libass falls back to Arial |
 | `--whisper-model models\faster-whisper-large-v3-turbo` | About half the size of `large-v3` and fits a 6 GB GPU. It transcribed an 8.7-minute talk in 15 s on an RTX 4050 |
 | `--source-height 1080` | Keeps downloads small on slow connections (use `--source-height max` for sharper crops) |
-| `--bgm-mood chill` | The AI's per-clip mood pick put rock music under a calm TED talk |
 | `--no-hook` | The 3 s teaser often repeated the clip's own opening, then played TV static and restarted (edit `clipper.py` to remove this) |
 
 ### Changes from upstream
@@ -64,17 +65,27 @@ Each run's clips, thumbnails and metadata are copied to `outputs\runs\<date>_<vi
 - **Subtitles crashed on Windows.** FFmpeg filter values are unescaped twice, and `C:\` paths only had one level of escaping, so the drive-letter colon split the filter (`No option name near '\Users\...'`). Fixed in `clipping/studio/helpers.py`.
 - **Whisper failed on the GPU on Windows** with `cublas64_12.dll is not found`. `clipping/engine.py` now imports torch first, which loads the cuBLAS/cuDNN DLLs bundled with the CUDA build of PyTorch.
 - **Clips ended mid-sentence.** The AI's timestamps are often a second or two off. The new `clipping/boundaries.py` snaps each clip onto the word-level transcript: starts land on a sentence start, ends land after the sentence in progress (plus about 1 s of any applause or laughter), and smart-trim segment edges land on word edges.
+- **Lips drifted behind the audio on some videos.** The renderers time frames as `frame_index / fps`, which is wrong for variable-frame-rate sources such as re-uploaded compilations. On a TV-show clip, the picture fell steadily behind the sound, reaching about 1 s after 70 s. Sources are now converted to constant frame rate after download (`engine.ensure_constant_frame_rate`, about 40 s for an 8-minute 1080p video with NVENC). The measured offset is now 0.02–0.03 s throughout.
+- **Clips were quieter than their source.** FFmpeg's `amix` halves every input unless `normalize=0` is set, so music mixes lost about 4 dB. Fixed, with the voice back at unity gain and the default music level lowered (`BGM_BASE_VOLUME` 0.10, adjustable with `--bgm-volume`). The new `--loudness-target LUFS` applies two-pass EBU R128 normalization to finished clips.
 - **A new URL silently re-clipped the previous video.** The source is always saved as `video_asli.mp4`, and yt-dlp skips files that already exist. `clipper` removes the old source, subtitles and AI response when the URL changes.
 
 **Improvements**
 - **`--track-mode smooth`**: a camera path planned from the whole clip with a centered filter, instead of a deadzone camera that trails the face. Missed detections are filled from neighbouring frames instead of pulling the camera to frame center, and camera cuts stay hard cuts. On two TED clips, the share of time the face was more than 10% off-center fell from 47% to 13% and from 27% to 1%, and the largest camera jumps (95th percentile) fell by about two-thirds.
+- **`--track-mode speaker`** (`clipping/studio/speaker_track.py`), for scenes with several people. The default trackers frame the largest face, which in a three-person sitcom scene was usually the wrong person, and two similar-sized faces made the crop jump back and forth. The new mode:
+  - finds camera cuts with a spike-based frame-difference test, so fast motion isn't mistaken for a cut
+  - finds faces with the full-range detector, then reads mouth movement (the `jawOpen` blendshape) from FaceLandmarker run on each enlarged face crop
+  - frames the face whose mouth moves while the transcript has speech, with hysteresis: a new speaker must lead for 0.5 s after the current one has been held 1.2 s, and it looks ahead at the start of each shot
+  - frames the whole group when everyone fits
+  - **zooms out per shot** when a head or group is wider than the 9:16 crop, filling above and below with a blurred copy of the shot, so heads aren't cut off
+
+  On a 105 s TV-show clip, the output now has 34 cuts for the source's 33 (previously 66), and time with no face in frame fell from 27% to 11%.
 - **`--bgm-mood {auto,chill,epic,sad,upbeat,suspense}`** forces one music mood for every clip. A lullaby and a devotional song were moved from the `upbeat` pool to `assets/bgm/_excluded/`.
 - **One-command setup** (`setup.cmd`) and the `clipper` launcher described above.
 
 ### Known limitations
 - **Voice-based podcast modes don't work** with current PyTorch: `--camera-switch` and `--split-screen --split-trigger diarization` (the default trigger). `pyannote.audio` 3.4, which is what installs alongside `numpy<2`, uses `torchaudio.AudioMetaData`, and torchaudio 2.9+ removed it. `--split-screen --split-trigger face` doesn't use pyannote.
 - **YouTube rate limits.** Many runs in a short time from one IP can get `HTTP Error 429` on subtitle downloads (the pipeline falls back to Whisper) or `403 Forbidden` partway through a download. Wait a while and re-run the same URL; `clipper` keeps the parts already downloaded.
-- **Tested content:** a single-speaker talk (TED) and a multi-character sitcom compilation. Scenes with no visible face (action shots, gameplay) fall back to a steady crop, and a small facecam over gameplay isn't handled specially.
+- **Tested content:** a single-speaker talk (TED) and a multi-character sitcom compilation. The speaker camera can't read faces seen side-on or from behind, so in those moments it holds a wide view instead of following that person. Scenes with no visible face (action shots, gameplay) fall back to a steady crop, and a small facecam over gameplay isn't handled specially.
 - **The AI prompt is tuned for the original author's Indonesian business and lifestyle accounts** (see `TARGET_ACCOUNTS` in `clipping/engine.py`), so titles and angle choices lean that way.
 
 ## ✨ Features
