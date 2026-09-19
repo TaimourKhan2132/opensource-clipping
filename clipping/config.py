@@ -132,7 +132,7 @@ URL_MEDIAPIPE_MODEL = "https://storage.googleapis.com/mediapipe-models/face_dete
 
 # 5. PENGATURAN Auto-BGM & Audio Ducking
 USE_AUTO_BGM = True
-BGM_BASE_VOLUME = 0.25
+BGM_BASE_VOLUME = 0.10  # music gain before ducking; amix no longer halves inputs (was 0.25 at half gain)
 BGM_MODE = "ducking"  # 'ducking' = sidechain compress, 'background' = constant volume mix
 
 # Daftar mood yang didukung (sesuai nama folder di assets/bgm/)
@@ -278,6 +278,18 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=["auto"] + BGM_MOODS,
         default="auto",
         help="Force one BGM mood folder for every clip ('auto' = use the mood the AI picked per clip)",
+    )
+    p.add_argument(
+        "--bgm-volume",
+        type=float,
+        default=BGM_BASE_VOLUME,
+        help="Music gain before ducking (0.10 is about -20 dB under the dialogue)",
+    )
+    p.add_argument(
+        "--loudness-target",
+        type=float,
+        default=None,
+        help="Normalize each finished clip to this loudness in LUFS (e.g. -14 for Shorts/TikTok/Reels). Off by default",
     )
     p.add_argument(
         "--no-karaoke",
@@ -864,7 +876,8 @@ def build_config(argv: list[str] | None = None) -> SimpleNamespace:
         url_glitch_video=URL_GLITCH_VIDEO,
         url_mediapipe_model=URL_MEDIAPIPE_MODEL,
         # BGM
-        bgm_base_volume=BGM_BASE_VOLUME,
+        bgm_base_volume=args.bgm_volume,
+        loudness_target=args.loudness_target,
         bgm_mode=args.bgm_mode,
         bgm_moods=BGM_MOODS,
         bgm_dir=BGM_DIR,

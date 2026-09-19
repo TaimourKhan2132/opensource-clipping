@@ -52,6 +52,7 @@ register_fonts_for_libass = typography.register_fonts_for_libass
 siapkan_font_tipografi = typography.siapkan_font_tipografi
 audio_bgm = _load_studio_internal_module("audio_bgm.py", "clipping_studio_audio_bgm")
 get_local_bgm_file = audio_bgm.get_local_bgm_file
+normalize_loudness = audio_bgm.normalize_loudness
 build_bgm_filter = audio_bgm.build_bgm_filter
 broll = _load_studio_internal_module("broll.py", "clipping_studio_broll")
 download_pexels_broll = broll.download_pexels_broll
@@ -925,7 +926,7 @@ def proses_klip(
                     audio_filter_vo = (
                         f"[3:a]volume={bgm_vol}[bgm_vol]; "
                         f"[vo_a]volume={vo_vol}[vo_loud]; "
-                        f"[bgm_vol][vo_loud]amix=inputs=2:duration=first:dropout_transition=2[a_out]"
+                        f"[bgm_vol][vo_loud]amix=inputs=2:duration=first:dropout_transition=2:normalize=0[a_out]"
                     )
                     v_filter_vo += f"; {audio_filter_vo}"
                 else:
@@ -1077,6 +1078,14 @@ def proses_klip(
                 finally:
                     if os.path.exists(glow_full_path):
                         os.remove(glow_full_path)
+
+        loudness_target = getattr(cfg, "loudness_target", None)
+        if loudness_target is not None:
+            for final_path, _, _, _ in concat_runs:
+                if os.path.exists(final_path):
+                    res = normalize_loudness(final_path, target_lufs=loudness_target)
+                    if res:
+                        print(f"   🔊 Loudness {res[0]:.1f} → {res[1]:.1f} LUFS ({os.path.basename(final_path)})")
 
         judul_thumbnail = judul_en or judul or f"Highlight {rank}"
         buat_thumbnail(out_vid, out_thm, judul_thumbnail, cfg)
