@@ -9,7 +9,7 @@ import json
 import os
 
 from . import diarization as diarization_mod
-from . import engine, metadata, studio, hook_manager, voiceover
+from . import boundaries, engine, metadata, studio, hook_manager, voiceover
 
 
 def run_pipeline(cfg) -> list[dict]:
@@ -95,6 +95,7 @@ def run_pipeline(cfg) -> list[dict]:
 
     # Step 4 — Metadata normalisation
     hasil_json = metadata.normalize_and_validate(hasil_json)
+    boundaries.snap_clip_boundaries(hasil_json, data_segmen)
     metadata.print_preview(hasil_json)
 
     metadata_path = os.path.join(cfg.outputs_dir, "metadata_preview.json")
