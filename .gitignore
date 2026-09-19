@@ -36,3 +36,11 @@ uploads/
 
 # YouTube Tracker local database
 youtube_tracker/*.sqlite3
+
+# Local runtime files (Windows fork)
+/models/
+/video_asli*
+/Montserrat-Black.ttf
+/blaze_face_full_range.tflite
+.last_source_url
+*.pt
