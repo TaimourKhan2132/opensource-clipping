@@ -55,6 +55,52 @@ crop_center_broll = broll.crop_center_broll
 face_detection = _load_studio_internal_module("face_detection.py", "clipping_studio_face_detection")
 get_face_detector = face_detection.get_face_detector
 
+
+def _centered(values, k, reducer):
+    """Apply reducer over a centered window of +/-k samples (shrinks at the edges)."""
+    return [reducer(values[max(0, i - k): i + k + 1]) for i in range(len(values))]
+
+
+def plan_smooth_camera(raw_data, width, step, snap_ratio=0.08, window_s=0.75):
+    """
+    Plan a lag-free camera path from the whole clip's face detections.
+
+    The render is offline, so each camera position can look at detections
+    before *and* after it (a centered filter) instead of trailing the face.
+    Missing detections are filled from neighbours rather than pulling the
+    camera to frame center, and big jumps (camera cuts / speaker changes)
+    stay hard cuts instead of being smoothed into a pan.
+    """
+    import statistics
+
+    def fill(key):
+        vals = [d[key] if d["box"] is not None else None for d in raw_data]
+        known = [i for i, v in enumerate(vals) if v is not None]
+        if not known:
+            return [d[key] for d in raw_data]
+        for i in range(len(vals)):
+            if vals[i] is None:
+                vals[i] = vals[min(known, key=lambda j: abs(j - i))]
+        return vals
+
+    k_med = 2
+    k_avg = max(1, int(round(window_s / max(step, 1e-6))))
+    snap_px = width * snap_ratio
+
+    def smooth(vals):
+        vals = _centered(vals, 1, statistics.median)  # drop single-frame false detections
+        out, start = [], 0
+        for i in range(1, len(vals) + 1):
+            if i == len(vals) or abs(vals[i] - vals[i - 1]) > snap_px:
+                run = _centered(vals[start:i], k_med, statistics.median)
+                out.extend(_centered(run, k_avg, lambda w: sum(w) / len(w)))
+                start = i
+        return out
+
+    xs, ys = smooth(fill("cx")), smooth(fill("cy"))
+    return [{"time": d["time"], "cx": x, "cy": y} for d, x, y in zip(raw_data, xs, ys)]
+
+
 def buat_video_hybrid(
     input_video,
     output_video,
@@ -233,7 +279,9 @@ def buat_video_hybrid(
 
     # FASE 2: SMOOTH CAMERA
     smooth_data = []
-    if raw_data:
+    if raw_data and getattr(cfg, "track_mode", "follow") == "smooth":
+        smooth_data = plan_smooth_camera(raw_data, width, STEP_DETEKSI)
+    elif raw_data:
         import statistics as _st
         initial_cxs = [d["cx"] for d in raw_data[:5]]
         initial_cys = [d["cy"] for d in raw_data[:5]]

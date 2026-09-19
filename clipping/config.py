@@ -480,6 +480,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Camera deadzone ratio (default: 0.15)",
     )
     p.add_argument(
+        "--track-mode",
+        choices=["follow", "smooth"],
+        default="follow",
+        help="'follow' = deadzone camera that trails the face; 'smooth' = lag-free path "
+        "planned from the whole clip (keeps faces centered, ignores --track-deadzone/--track-smooth)",
+    )
+    p.add_argument(
         "--track-smooth",
         type=float,
         default=None,
@@ -876,6 +883,7 @@ def build_config(argv: list[str] | None = None) -> SimpleNamespace:
         # Tracking Tuning
         track_step=args.track_step,
         track_deadzone=args.track_deadzone,
+        track_mode=args.track_mode,
         track_smooth=args.track_smooth,
         track_jitter=args.track_jitter,
         track_snap=args.track_snap,
