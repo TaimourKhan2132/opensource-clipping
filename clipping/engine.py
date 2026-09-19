@@ -260,7 +260,7 @@ def ensure_constant_frame_rate(video_path: str, tolerance: float = 0.002) -> boo
     print(f"      🎞️ Variable frame rate (avg {average:.3f} vs {nominal:.3f} fps) → converting to constant {target} fps...")
     tmp = video_path + ".cfr.mp4"
     base = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", video_path,
-            "-map", "0:v:0", "-map", "0:a?", "-fps_mode", "cfr", "-r", target, "-pix_fmt", "yuv420p"]
+            "-map", "0:v:0", "-map", "0:a?", "-r", target, "-pix_fmt", "yuv420p"]
     for codec in (["-c:v", "h264_nvenc", "-preset", "p5", "-cq", "18"],
                   ["-c:v", "libx264", "-preset", "veryfast", "-crf", "17"]):
         if subprocess.run(base + codec + ["-c:a", "copy", tmp]).returncode == 0:
