@@ -2,6 +2,7 @@
 General helper utilities for Studio rendering workflow.
 """
 
+import os
 
 def format_seconds(seconds):
     """
@@ -27,8 +28,23 @@ def escape_ffmpeg_filter_value(value: str) -> str:
     Args:
         value: Raw value to place inside an FFmpeg filter string.
 
+    The value is unescaped twice (filtergraph level, then option level), so
+    special characters need two levels of escaping. On Windows, backslashes
+    are converted to forward slashes so a path like ``C:\\x`` stays intact.
+
+    Args:
+        value: Raw value to place inside an FFmpeg filter string.
+
     Returns:
         Escaped value string for FFmpeg filter usage.
     """
-    return str(value).replace("\\", r"\\").replace(":", r"\:").replace("'", r"\'")
+    bs = chr(92)
+    value = str(value)
+    if os.name == "nt":
+        value = value.replace(bs, "/")
+    return (
+        value.replace(bs, bs * 4)
+        .replace(":", bs * 2 + ":")
+        .replace("'", bs * 3 + "'")
+    )
 
