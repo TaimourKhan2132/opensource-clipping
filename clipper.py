@@ -30,8 +30,8 @@ DEFAULTS = [
     "--font-style", "DEFAULT",          # HORMOZI's Montserrat download is broken (renders as Arial)
     "--whisper-model", WHISPER_MODEL,   # turbo: ~half the size of large-v3, fits a 6 GB GPU
     "--source-height", "1080",          # keeps downloads small on a slow connection
-    "--bgm-mood", "chill",              # calm music instead of the AI's per-clip pick
-    "--track-mode", "smooth",           # lag-free camera path: faces stay centered, fewer jumps
+    "--track-mode", "speaker",          # follow whoever is talking; lag-free, no ping-ponging
+    "--loudness-target", "-14",         # Shorts/TikTok/Reels play at about -14 LUFS
     "--no-hook",                        # no 3s teaser + TV-static intro
 ]
 
@@ -70,8 +70,12 @@ def main():
     with open(LAST_URL_FILE, "w", encoding="utf-8") as f:
         f.write(url)
 
+    # No music unless asked for: an AI-picked track often fights the scene's own
+    # tone (e.g. lo-fi under deadpan comedy). Pass --bgm-mood MOOD to add music.
+    music = [] if any(a.startswith(("--bgm-mood", "--bgm-mode", "--bgm-volume")) for a in args) else ["--no-bgm"]
+
     started = time.time()
-    code = subprocess.call([sys.executable, os.path.join(BASE, "main.py"), *DEFAULTS, *args], cwd=BASE)
+    code = subprocess.call([sys.executable, os.path.join(BASE, "main.py"), *DEFAULTS, *music, *args], cwd=BASE)
     if code != 0:
         sys.exit(code)
 

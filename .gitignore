@@ -44,3 +44,4 @@ youtube_tracker/*.sqlite3
 /blaze_face_full_range.tflite
 .last_source_url
 *.pt
+/face_landmarker.task
