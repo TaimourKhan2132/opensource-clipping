@@ -7,6 +7,7 @@ Maps to Cell 2 (The Engine) of the notebook.
 import json
 import os
 import re
+import subprocess
 import time
 
 from yt_dlp import YoutubeDL
@@ -227,6 +228,49 @@ def download_video(
             f"❌ Download dari {platform_label} gagal — file video tidak ditemukan di {output_path}.\n"
             "      Pastikan URL valid dan bisa diakses secara publik."
         )
+
+
+def ensure_constant_frame_rate(video_path: str, tolerance: float = 0.002) -> bool:
+    """
+    Re-encode a variable-frame-rate (VFR) source to constant frame rate, in place.
+
+    The renderers read frames sequentially and time them as frame_index / fps. On
+    a VFR source (common in re-uploaded compilations) that timing drifts from the
+    audio, so lips fall further behind the words as the clip goes on. Frames are
+    duplicated/dropped by timestamp to the nominal rate; audio is copied untouched.
+
+    Returns True if the file was converted.
+    """
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=r_frame_rate,avg_frame_rate", "-of", "json", video_path],
+        capture_output=True, text=True,
+    )
+    try:
+        stream = json.loads(probe.stdout)["streams"][0]
+        num, den = (float(x) for x in stream["r_frame_rate"].split("/"))
+        anum, aden = (float(x) for x in stream["avg_frame_rate"].split("/"))
+        nominal, average = num / den, anum / aden
+    except (KeyError, IndexError, ValueError, ZeroDivisionError):
+        return False
+    if nominal <= 0 or average <= 0 or abs(average - nominal) / nominal < tolerance:
+        return False
+
+    target = stream["r_frame_rate"] if nominal <= 60 else f"{round(average)}"
+    print(f"      🎞️ Variable frame rate (avg {average:.3f} vs {nominal:.3f} fps) → converting to constant {target} fps...")
+    tmp = video_path + ".cfr.mp4"
+    base = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", video_path,
+            "-map", "0:v:0", "-map", "0:a?", "-fps_mode", "cfr", "-r", target, "-pix_fmt", "yuv420p"]
+    for codec in (["-c:v", "h264_nvenc", "-preset", "p5", "-cq", "18"],
+                  ["-c:v", "libx264", "-preset", "veryfast", "-crf", "17"]):
+        if subprocess.run(base + codec + ["-c:a", "copy", tmp]).returncode == 0:
+            os.replace(tmp, video_path)
+            print("      ✅ Constant frame rate source ready.")
+            return True
+    if os.path.exists(tmp):
+        os.remove(tmp)
+    print("      ⚠️ Frame rate conversion failed — continuing with the original file.")
+    return False
 
 
 # ==============================================================================

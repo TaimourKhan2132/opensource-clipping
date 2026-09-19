@@ -43,6 +43,7 @@ def run_pipeline(cfg) -> list[dict]:
         getattr(cfg, "download_source_height", "max"),
         source_platform=source_platform,
     )
+    engine.ensure_constant_frame_rate(cfg.file_video_asli)
 
     # Step 2 — Transcribe
     transkrip_lengkap = ""
