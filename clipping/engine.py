@@ -10,6 +10,16 @@ import re
 import time
 
 from yt_dlp import YoutubeDL
+
+if os.name == "nt":
+    # On Windows, CTranslate2 (faster-whisper) looks up cuBLAS/cuDNN by name and
+    # fails with "cublas64_12.dll is not found". Importing torch first loads the
+    # copies bundled with the CUDA build of PyTorch into the process.
+    try:
+        import torch  # noqa: F401
+    except ImportError:
+        pass
+
 from faster_whisper import WhisperModel
 
 
