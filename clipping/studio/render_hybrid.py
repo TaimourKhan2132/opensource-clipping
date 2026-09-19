@@ -1,3 +1,4 @@
+import bisect
 import html
 import importlib.util
 import json
@@ -54,6 +55,27 @@ broll = _load_studio_internal_module("broll.py", "clipping_studio_broll")
 crop_center_broll = broll.crop_center_broll
 face_detection = _load_studio_internal_module("face_detection.py", "clipping_studio_face_detection")
 get_face_detector = face_detection.get_face_detector
+speaker_track = _load_studio_internal_module("speaker_track.py", "clipping_studio_speaker_track")
+
+
+def _fit_with_blur(window, out_w, out_h):
+    """
+    Fit a window wider than the output ratio into the output frame: the window is
+    scaled to the full output width, and the space above/below is filled with a
+    blurred, darkened copy of the same shot (the usual look for TV clips on Shorts).
+    """
+    h, w = window.shape[:2]
+    fg_h = min(out_h, int(round(out_w * h / w / 2)) * 2)
+    fg = _resize_frame(window, (out_w, fg_h))
+    scale = max(out_w / w, out_h / h)
+    bw, bh = int(np.ceil(w * scale)), int(np.ceil(h * scale))
+    small = cv2.resize(window, (max(1, bw // 8), max(1, bh // 8)), interpolation=cv2.INTER_AREA)
+    bg = cv2.resize(cv2.GaussianBlur(small, (0, 0), 6), (bw, bh), interpolation=cv2.INTER_LINEAR)
+    x0, y0 = (bw - out_w) // 2, (bh - out_h) // 2
+    canvas = (bg[y0:y0 + out_h, x0:x0 + out_w] * 0.5).astype(np.uint8)
+    y = (out_h - fg_h) // 2
+    canvas[y:y + fg_h] = fg
+    return canvas
 
 
 def _centered(values, k, reducer):
@@ -110,6 +132,7 @@ def buat_video_hybrid(
     cfg,
     broll_data=None,
     label="Hybrid",
+    speech_segments=None,
 ):
     """
     Render a hybrid video combining main footage and b-roll with dynamic panning based on face tracking.
@@ -212,13 +235,18 @@ def buat_video_hybrid(
     last_detect_percent = -1
     
     skip_tracking = getattr(cfg, "static_crop", False) and rasio in ["1:1", "3:4", "4:5"]
+    speaker_mode = (
+        getattr(cfg, "track_mode", "follow") == "speaker"
+        and _is_vertical_ratio(rasio)
+        and not skip_tracking
+    )
 
     if skip_tracking:
         print(f"🧠 {label} - Static Crop aktif (tanpa face tracking)...", flush=True)
-    else:
+    elif not speaker_mode:
         print(f"🧠 {label} - Analisa wajah dimulai...", flush=True)
 
-    while current_time <= duration and not skip_tracking:
+    while current_time <= duration and not skip_tracking and not speaker_mode:
         cap.set(cv2.CAP_PROP_POS_MSEC, (start_clip + current_time) * 1000)
         ret, frame = cap.read()
         if not ret:
@@ -279,7 +307,12 @@ def buat_video_hybrid(
 
     # FASE 2: SMOOTH CAMERA
     smooth_data = []
-    if raw_data and getattr(cfg, "track_mode", "follow") == "smooth":
+    if speaker_mode:
+        smooth_data = speaker_track.plan_speaker_camera(
+            input_video, start_clip, end_clip, width, height, crop_w, speech_segments,
+            os.path.join(cfg.base_dir, "face_landmarker.task"), get_face_detector(cfg), label=label,
+        )
+    elif raw_data and getattr(cfg, "track_mode", "follow") == "smooth":
         smooth_data = plan_smooth_camera(raw_data, width, STEP_DETEKSI)
     elif raw_data:
         import statistics as _st
@@ -325,6 +358,15 @@ def buat_video_hybrid(
                 if t1 == t2: return cx1
                 return cx1 + (cx2 - cx1) * (t - t1) / (t2 - t1)
         return default_cx
+
+    zoom_times = [d["time"] for d in smooth_data]
+
+    def _get_zoom(t):
+        """Zoom-out factor at time t (step function; only the speaker planner sets it)."""
+        if not smooth_data or "zoom" not in smooth_data[0]:
+            return 1.0
+        i = max(0, bisect.bisect_right(zoom_times, t) - 1)
+        return smooth_data[i].get("zoom", 1.0)
 
     def get_box(t):
         if not raw_data:
@@ -408,10 +450,18 @@ def buat_video_hybrid(
             if _is_vertical_ratio(rasio):
                 # Vertical/square ratios: face-tracked crop
                 cx_base, cy_base = _get_pos(t)
-                x1_crop = int(max(0, min(cx_base - crop_w // 2, width - crop_w)))
-                y1_crop = int(max(0, min(cy_base - crop_h // 2, height - crop_h)))
-                cropped = frame_utama[y1_crop : y1_crop + crop_h, x1_crop : x1_crop + crop_w]
-                frame_normal = _resize_frame(cropped, (base_out_w, base_out_h))
+                zoom = _get_zoom(t)
+                if zoom > 1.0:
+                    # Subject wider than the vertical crop: zoom out, fill with blur
+                    win_w = min(width, int(crop_w * zoom))
+                    x1_crop = int(max(0, min(cx_base - win_w // 2, width - win_w)))
+                    y1_crop = 0
+                    frame_normal = _fit_with_blur(frame_utama[:, x1_crop : x1_crop + win_w], base_out_w, base_out_h)
+                else:
+                    x1_crop = int(max(0, min(cx_base - crop_w // 2, width - crop_w)))
+                    y1_crop = int(max(0, min(cy_base - crop_h // 2, height - crop_h)))
+                    cropped = frame_utama[y1_crop : y1_crop + crop_h, x1_crop : x1_crop + crop_w]
+                    frame_normal = _resize_frame(cropped, (base_out_w, base_out_h))
             else:
                 # 16:9 landscape: fit-to-height with letterbox (no stretch)
                 cx_base, cy_base = default_cx, default_cy

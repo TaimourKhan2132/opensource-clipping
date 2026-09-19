@@ -493,10 +493,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--track-mode",
-        choices=["follow", "smooth"],
+        choices=["follow", "smooth", "speaker"],
         default="follow",
         help="'follow' = deadzone camera that trails the face; 'smooth' = lag-free path "
-        "planned from the whole clip (keeps faces centered, ignores --track-deadzone/--track-smooth)",
+        "planned from the whole clip (keeps faces centered, ignores --track-deadzone/--track-smooth); "
+        "'speaker' = like smooth, but with several people it frames whoever is talking "
+        "(mouth movement while speech is heard), per camera shot, without ping-ponging",
     )
     p.add_argument(
         "--track-smooth",

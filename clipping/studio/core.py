@@ -288,8 +288,7 @@ def proses_klip(
                 buat_video_hybrid(
                     file_hook_src, item_silent,
                     item_start, item_end, rasio, cfg,
-                    label=f"Rank {rank} HookV2 Item {i}",
-                )
+                    label=f"Rank {rank} HookV2 Item {i}", speech_segments=data_segmen)
 
                 # Build video filter + audio mux
                 vf_parts = []
@@ -393,8 +392,7 @@ def proses_klip(
                     h_end,
                     rasio,
                     cfg,
-                    label=f"Rank {rank} Hook",
-                )
+                    label=f"Rank {rank} Hook", speech_segments=data_segmen)
             
             aktif_advanced_hook = cfg.use_advanced_text_on_hook
             if not cfg.no_subs and not custom_hook:
@@ -492,8 +490,7 @@ def proses_klip(
                     get_x_main = buat_video_hybrid(
                         cfg.file_video_asli, s_silent, s_start, s_end,
                         rasio, cfg, broll_aktif,
-                        label=f"Rank {rank} Seg {idx} Hybrid",
-                    )
+                        label=f"Rank {rank} Seg {idx} Hybrid", speech_segments=data_segmen)
 
                 # Subtitle for this segment
                 if not cfg.no_subs:
@@ -627,8 +624,7 @@ def proses_klip(
                     rasio,
                     cfg,
                     broll_aktif,
-                    label=f"Rank {rank} Main",
-                )
+                    label=f"Rank {rank} Main", speech_segments=data_segmen)
 
             vo_data = clip.get("voiceover")
             
