@@ -274,6 +274,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="BGM mixing mode: 'ducking' (sidechain compress — BGM auto-lowers during speech) or 'background' (constant low volume mix)",
     )
     p.add_argument(
+        "--bgm-mood",
+        choices=["auto"] + BGM_MOODS,
+        default="auto",
+        help="Force one BGM mood folder for every clip ('auto' = use the mood the AI picked per clip)",
+    )
+    p.add_argument(
         "--no-karaoke",
         action="store_true",
         help="Disable karaoke highlight effect (use clean text instead)",
@@ -817,6 +823,7 @@ def build_config(argv: list[str] | None = None) -> SimpleNamespace:
         use_broll=not args.no_broll,
         use_hook_glitch=not args.no_hook,
         use_auto_bgm=not args.no_bgm,
+        bgm_mood_override=args.bgm_mood,
         use_karaoke_effect=not args.no_karaoke,
         use_split_screen=args.split_screen,
         use_dynamic_split=args.dynamic_split,

@@ -231,6 +231,11 @@ def run_pipeline(cfg) -> list[dict]:
         if custom_hook_path:
             klip["custom_hook_info"] = {"file_path": custom_hook_path}
 
+        # --bgm-mood forces one music mood instead of the one the AI picked
+        bgm_mood_override = getattr(cfg, "bgm_mood_override", "auto")
+        if bgm_mood_override != "auto":
+            klip["bgm_mood"] = bgm_mood_override
+
         hasil_render = studio.proses_klip(
             klip["rank"],
             klip,
