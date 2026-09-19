@@ -4,8 +4,11 @@ audio_bgm.py — Local BGM asset resolver.
 Reads MP3 files from assets/bgm/<mood>/ directories and selects one at random.
 """
 
+import json
 import os
 import random
+import re
+import subprocess
 
 
 def get_local_bgm_file(mood, bgm_dir):
@@ -33,6 +36,38 @@ def get_local_bgm_file(mood, bgm_dir):
     return os.path.abspath(os.path.join(mood_dir, selected_file))
 
 
+def normalize_loudness(path, target_lufs=-14.0, true_peak=-1.5, lra=11.0):
+    """
+    Normalize a finished clip's audio to a loudness target in place (video is copied).
+
+    Two-pass EBU R128 loudnorm: the first pass measures, the second applies a linear
+    gain so dynamics are kept. Short-form platforms play back at about -14 LUFS.
+    Returns (before_lufs, after_target) or None if measuring failed.
+    """
+    measure = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-i", path, "-af",
+         f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:print_format=json", "-f", "null", "-"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+    )
+    m = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", measure.stderr)
+    if not m:
+        return None
+    st = json.loads(m.group(0))
+    af = (
+        f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:"
+        f"measured_I={st['input_i']}:measured_TP={st['input_tp']}:measured_LRA={st['input_lra']}:"
+        f"measured_thresh={st['input_thresh']}:offset={st['target_offset']}:linear=true"
+    )
+    tmp = path + ".loudnorm.mp4"
+    subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", path, "-c:v", "copy",
+         "-af", af, "-ar", "48000", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", tmp],
+        check=True,
+    )
+    os.replace(tmp, path)
+    return float(st["input_i"]), target_lufs
+
+
 def build_bgm_filter(bgm_mode, bgm_base_volume, audio_input_voc="[1:a]", audio_input_bgm="[2:a]"):
     """
     Build the FFmpeg filter_complex string for BGM mixing.
@@ -46,7 +81,7 @@ def build_bgm_filter(bgm_mode, bgm_base_volume, audio_input_voc="[1:a]", audio_i
     Returns:
         str: The filter_complex string for FFmpeg.
     """
-    voc_format = f"{audio_input_voc}aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.2[voc]"
+    voc_format = f"{audio_input_voc}aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume=1.0[voc]"
     bgm_format = f"{audio_input_bgm}aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=stereo,volume={bgm_base_volume}[bgm]"
 
     if bgm_mode == "background":
@@ -54,7 +89,7 @@ def build_bgm_filter(bgm_mode, bgm_base_volume, audio_input_voc="[1:a]", audio_i
         return (
             f"{voc_format}; "
             f"{bgm_format}; "
-            f"[voc][bgm]amix=inputs=2:duration=first[a_out]"
+            f"[voc][bgm]amix=inputs=2:duration=first:normalize=0[a_out]"
         )
     else:
         # Ducking mode (default) — sidechain compress makes BGM duck under vocals
@@ -63,5 +98,5 @@ def build_bgm_filter(bgm_mode, bgm_base_volume, audio_input_voc="[1:a]", audio_i
             f"{bgm_format}; "
             f"[voc]asplit=2[voc_sc][voc_mix]; "
             f"[bgm][voc_sc]sidechaincompress=threshold=0.08:ratio=5.0:attack=100:release=1000[bgm_ducked]; "
-            f"[voc_mix][bgm_ducked]amix=inputs=2:duration=first[a_out]"
+            f"[voc_mix][bgm_ducked]amix=inputs=2:duration=first:normalize=0[a_out]"
         )
